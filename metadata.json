@@ -1,0 +1,5 @@
+{
+  "name": "Cube Net Explorer",
+  "description": "An interactive tool to explore, draw on, and animate the transition between a 2D net and a 3D cube.",
+  "requestFramePermissions": []
+}
