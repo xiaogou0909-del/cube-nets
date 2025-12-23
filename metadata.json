@@ -1,5 +1,5 @@
 {
-  "name": "Cube Net Explorer",
-  "description": "An interactive tool to explore, draw on, and animate the transition between a 2D net and a 3D cube.",
+  "name": "正方体展开图探索",
+  "description": "一个用于探索、绘制和演示正方体二维展开图与三维折叠过程的交互式工具。",
   "requestFramePermissions": []
 }

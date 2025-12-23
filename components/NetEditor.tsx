@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { FaceData } from '../types';
-import { isConnected, GRID_SIZE } from '../utils';
+import React, { useState, useMemo, useRef, createRef, useEffect } from 'react';
+import { FaceData, DraggableFaceHandle, AdjacencyMap, EdgeSide } from '../types';
+import { isConnected, GRID_SIZE, SIDE_COLORS } from '../utils';
 import { DraggableFace } from './DraggableFace';
-import { Paintbrush, Eraser, Move, Circle, Triangle, Minus, Hash, PaintBucket } from 'lucide-react';
+import { Paintbrush, Eraser, Move, Circle, Triangle, Minus, Hash, PaintBucket, Undo } from 'lucide-react';
 
 interface Props {
   faces: FaceData[];
@@ -13,9 +13,12 @@ interface Props {
   hoveredFaceId: number | null;
   setHoveredFaceId: (id: number | null) => void;
   isValid: boolean;
+  adjacencyMap: AdjacencyMap; // Prop for highligting
+  showSharedEdges: boolean;
+  showFaceIds: boolean;
 }
 
-export type ToolType = 'brush' | 'line' | 'circle' | 'triangle';
+export type ToolType = 'move' | 'brush' | 'line' | 'circle' | 'triangle';
 
 export const NetEditor: React.FC<Props> = ({
   faces,
@@ -25,24 +28,49 @@ export const NetEditor: React.FC<Props> = ({
   onTextureUpdate,
   hoveredFaceId,
   setHoveredFaceId,
-  isValid
+  isValid,
+  adjacencyMap,
+  showSharedEdges,
+  showFaceIds
 }) => {
   const [drawingColor, setDrawingColor] = useState('#1e293b'); // slate-800
-  const [activeTool, setActiveTool] = useState<ToolType>('brush');
-  const CELL_SIZE = 80; // Pixels per cell
+  const [activeTool, setActiveTool] = useState<ToolType>('move');
+  
+  // Responsive Cell Size
+  const [cellSize, setCellSize] = useState(80);
 
-  // Calculate potential move targets
+  useEffect(() => {
+    const handleResize = () => {
+        // Mobile (md breakpoint is 768px)
+        setCellSize(window.innerWidth < 768 ? 44 : 80);
+    };
+    
+    // Initial call
+    handleResize();
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Refs for each face to call Undo
+  const faceRefs = useRef<Map<number, React.RefObject<DraggableFaceHandle>>>(new Map());
+  
+  // Ensure we have refs for current faces
+  if (faceRefs.current.size !== faces.length) {
+      faces.forEach(f => {
+          if (!faceRefs.current.has(f.id)) {
+              faceRefs.current.set(f.id, createRef());
+          }
+      });
+  }
+
+  // Calculate potential move targets (ghost slots)
   const moveTargets = useMemo(() => {
     if (selectedId === null) return [];
     
-    // Logic: Remove selected face, check valid empty spots adjacent to remaining group
-    // that would keep the group connected.
-    
-    // 1. Temporarily remove selected
     const remaining = faces.filter(f => f.id !== selectedId);
-    if (remaining.length === 0) return []; // Should not happen with 6 faces
+    if (remaining.length === 0) return []; 
 
-    // 2. Find all empty adjacent cells to the remaining group
     const occupied = new Set(remaining.map(f => `${f.x},${f.y}`));
     const targets = new Set<string>();
 
@@ -50,7 +78,6 @@ export const NetEditor: React.FC<Props> = ({
       [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(([dx, dy]) => {
         const nx = f.x + dx;
         const ny = f.y + dy;
-        // Bounds check
         if (nx >= 0 && nx < GRID_SIZE && ny >= 0 && ny < GRID_SIZE) {
           if (!occupied.has(`${nx},${ny}`)) {
              targets.add(`${nx},${ny}`);
@@ -59,8 +86,6 @@ export const NetEditor: React.FC<Props> = ({
       });
     });
 
-    // 3. For each target, check if placing selected there keeps whole connected
-    // (Actually, by definition, if we attach to the main group, it is connected)
     return Array.from(targets).map(s => {
       const [x, y] = s.split(',').map(Number);
       return { x, y };
@@ -68,11 +93,19 @@ export const NetEditor: React.FC<Props> = ({
 
   }, [faces, selectedId]);
 
-  const handleMove = (x: number, y: number) => {
+  const handleGhostClick = (x: number, y: number) => {
     if (selectedId === null) return;
     setFaces(prev => prev.map(f => 
       f.id === selectedId ? { ...f, x, y } : f
     ));
+  };
+
+  const onFaceMove = (id: number, newX: number, newY: number): boolean => {
+    if (newX < 0 || newX >= GRID_SIZE || newY < 0 || newY >= GRID_SIZE) return false;
+    const targetOccupied = faces.some(f => f.id !== id && f.x === newX && f.y === newY);
+    if (targetOccupied) return false;
+    setFaces(prev => prev.map(f => f.id === id ? { ...f, x: newX, y: newY } : f));
+    return true;
   };
 
   const getContext = (): CanvasRenderingContext2D | null => {
@@ -87,14 +120,11 @@ export const NetEditor: React.FC<Props> = ({
   const handleClearCanvas = () => {
     const ctx = getContext();
     if (ctx && selectedId !== null) {
+        const dpr = window.devicePixelRatio || 1;
+        const logicalSize = ctx.canvas.width / dpr;
+        
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        // Re-draw label
-        ctx.font = "bold 60px Arial";
-        ctx.fillStyle = "rgba(0,0,0,0.05)";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(selectedId.toString(), ctx.canvas.width/2, ctx.canvas.height/2);
+        ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
     }
   };
@@ -102,8 +132,11 @@ export const NetEditor: React.FC<Props> = ({
   const handleFill = () => {
     const ctx = getContext();
     if (ctx && selectedId !== null) {
+        const dpr = window.devicePixelRatio || 1;
+        const logicalSize = ctx.canvas.width / dpr;
+        
         ctx.fillStyle = drawingColor;
-        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
     }
   };
@@ -111,150 +144,274 @@ export const NetEditor: React.FC<Props> = ({
   const handleHatch = () => {
     const ctx = getContext();
     if (ctx && selectedId !== null) {
+        const dpr = window.devicePixelRatio || 1;
+        const logicalSize = ctx.canvas.width / dpr;
+        
         ctx.strokeStyle = drawingColor;
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 16;
         ctx.beginPath();
-        const w = ctx.canvas.width;
-        const h = ctx.canvas.height;
-        const step = 20;
-        for(let i = -h; i < w; i += step) {
+        
+        const step = 80;
+        for(let i = -logicalSize; i < logicalSize * 2; i += step) {
             ctx.moveTo(i, 0);
-            ctx.lineTo(i + h, h);
+            ctx.lineTo(i + logicalSize, logicalSize);
         }
         ctx.stroke();
         onTextureUpdate(selectedId);
     }
   };
 
-  return (
-    <div className="flex flex-col items-center gap-4 bg-gray-50 p-4 rounded-xl shadow-inner h-full overflow-y-auto">
+  const handleUndo = () => {
+    if (selectedId !== null) {
+        faceRefs.current.get(selectedId)?.current?.undo();
+    }
+  };
+
+  // Helper to determine what edges to highlight for a face
+  const getHighlights = (faceId: number) => {
+      if (selectedId === null) return undefined;
+      const map = adjacencyMap[faceId];
+      if (!map) return undefined;
       
-      {/* Drawing Toolbar */}
-      <div className="flex flex-col gap-2 bg-white p-2 rounded-lg shadow-sm w-full">
+      // Case 1: This is the selected face. Show all its connections.
+      if (faceId === selectedId) {
+          return map; 
+      }
+      
+      // Case 2: This is a neighbor. Check if it connects to the selected face.
+      const filtered: typeof map = {};
+      let hasMatch = false;
+      for(const side of ['top', 'bottom', 'left', 'right'] as const) {
+          const conn = map[side];
+          if (conn && conn.targetFaceId === selectedId) {
+              // We want the color of the SELECTED face's side (conn.targetSide)
+              filtered[side] = {
+                  ...conn,
+                  color: SIDE_COLORS[conn.targetSide]
+              };
+              hasMatch = true;
+          }
+      }
+      return hasMatch ? filtered : undefined;
+  };
+
+  // Helper to determine Vertex Labels (A,B,C,D / a,b,c,d)
+  const getVertexLabels = (faceId: number): {[cornerIdx: number]: string} | undefined => {
+      if (selectedId === null) return undefined;
+
+      // 1. Selected Face: A, B, C, D at TL, TR, BR, BL
+      if (faceId === selectedId) {
+          return { 0: 'A', 1: 'B', 2: 'C', 3: 'D' };
+      }
+
+      // 2. Neighbor: Determine correspondence
+      // We need to look at the Adjacency of the SELECTED face to see if this face connects to it.
+      const selectedAdj = adjacencyMap[selectedId];
+      if (!selectedAdj) return undefined;
+
+      const labels: {[key: number]: string} = {};
+      let hasLabel = false;
+
+      // Check all 4 sides of the SELECTED face to see if they touch this faceId
+      // Selected Top (A-B)
+      if (selectedAdj.top?.targetFaceId === faceId) {
+          const { targetSide, reversed } = selectedAdj.top;
+          const [l1, l2] = reversed ? ['b', 'a'] : ['a', 'b'];
+          applyLabels(targetSide, l1, l2, labels);
+          hasLabel = true;
+      }
+      // Selected Right (B-C)
+      if (selectedAdj.right?.targetFaceId === faceId) {
+          const { targetSide, reversed } = selectedAdj.right;
+          const [l1, l2] = reversed ? ['c', 'b'] : ['b', 'c'];
+          applyLabels(targetSide, l1, l2, labels);
+          hasLabel = true;
+      }
+      // Selected Bottom (C-D)
+      if (selectedAdj.bottom?.targetFaceId === faceId) {
+          const { targetSide, reversed } = selectedAdj.bottom;
+          const [l1, l2] = reversed ? ['d', 'c'] : ['c', 'd'];
+          applyLabels(targetSide, l1, l2, labels);
+          hasLabel = true;
+      }
+      // Selected Left (D-A)
+      if (selectedAdj.left?.targetFaceId === faceId) {
+          const { targetSide, reversed } = selectedAdj.left;
+          const [l1, l2] = reversed ? ['a', 'd'] : ['d', 'a'];
+          applyLabels(targetSide, l1, l2, labels);
+          hasLabel = true;
+      }
+
+      return hasLabel ? labels : undefined;
+  };
+
+  // Maps a side (top/right/bottom/left) to its vertex indices
+  // Top: 0-1, Right: 1-2, Bottom: 2-3, Left: 3-0
+  const applyLabels = (side: EdgeSide, startLabel: string, endLabel: string, labels: any) => {
+      switch(side) {
+          case 'top': labels[0] = startLabel; labels[1] = endLabel; break;
+          case 'right': labels[1] = startLabel; labels[2] = endLabel; break;
+          case 'bottom': labels[2] = startLabel; labels[3] = endLabel; break;
+          case 'left': labels[3] = startLabel; labels[0] = endLabel; break;
+      }
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-4 bg-gray-50 p-2 sm:p-4 rounded-xl shadow-inner h-full w-full relative">
+      
+      {/* Toolbar - Responsive horizontal scroll */}
+      <div className="flex flex-col gap-2 bg-white p-2 rounded-lg shadow-sm w-full max-w-full z-10 shrink-0">
          {/* Colors */}
-         <div className="flex justify-center gap-1 mb-2">
+         <div className="flex justify-center gap-1 mb-2 overflow-x-auto pb-1 no-scrollbar">
             {['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'].map(c => (
                 <button
                     key={c}
                     onClick={() => setDrawingColor(c)}
-                    className={`w-6 h-6 rounded-full border-2 transition-transform ${drawingColor === c ? 'border-black scale-110' : 'border-transparent'}`}
+                    className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition-transform ${drawingColor === c ? 'border-black scale-110' : 'border-transparent'}`}
                     style={{ backgroundColor: c }}
                 />
             ))}
          </div>
          
          {/* Tools */}
-         <div className="flex justify-center gap-2 flex-wrap">
+         <div className="flex justify-center gap-2 flex-wrap sm:flex-nowrap overflow-x-auto no-scrollbar">
+             <button 
+                onClick={() => setActiveTool('move')}
+                className={`p-2 rounded flex-shrink-0 ${activeTool === 'move' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                title="移动面"
+             >
+                <Move size={18} />
+             </button>
+             
+             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
+
              <button 
                 onClick={() => setActiveTool('brush')}
-                className={`p-2 rounded ${activeTool === 'brush' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
-                title="Brush"
+                className={`p-2 rounded flex-shrink-0 ${activeTool === 'brush' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                title="画笔"
              >
                 <Paintbrush size={18} />
              </button>
              <button 
                 onClick={() => setActiveTool('line')}
-                className={`p-2 rounded ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
-                title="Line"
+                className={`p-2 rounded flex-shrink-0 ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                title="直线"
              >
                 <Minus size={18} className="-rotate-45" />
              </button>
              <button 
                 onClick={() => setActiveTool('circle')}
-                className={`p-2 rounded ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
-                title="Circle"
+                className={`p-2 rounded flex-shrink-0 ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                title="圆形"
              >
                 <Circle size={18} />
              </button>
              <button 
                 onClick={() => setActiveTool('triangle')}
-                className={`p-2 rounded ${activeTool === 'triangle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
-                title="Triangle"
+                className={`p-2 rounded flex-shrink-0 ${activeTool === 'triangle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                title="三角形"
              >
                 <Triangle size={18} />
              </button>
              
-             <div className="w-px bg-gray-200 h-8 mx-1"></div>
+             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
 
              <button 
                 onClick={handleHatch}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700"
-                title="Diagonal Hatch"
+                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                title="斜线填充"
              >
                 <Hash size={18} />
              </button>
              <button 
                 onClick={handleFill}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700"
-                title="Solid Fill"
+                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                title="实色填充"
              >
                 <PaintBucket size={18} />
+             </button>
+             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
+             <button 
+                onClick={handleUndo}
+                disabled={selectedId === null}
+                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                title="撤销上一步"
+             >
+                <Undo size={18} />
              </button>
              <button 
                 onClick={handleClearCanvas}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-red-500"
-                title="Clear Face"
+                className="p-2 rounded hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-red-500 flex-shrink-0"
+                title="清空画布"
              >
                 <Eraser size={18} />
              </button>
          </div>
       </div>
 
-      <div className="text-sm text-gray-500 mb-2 flex items-center gap-2">
-         {!isValid && <span className="text-red-500 font-bold">Invalid Shape</span>}
-         {isValid && <span className="text-green-600 font-medium">Valid Net</span>}
-         <span className="text-xs text-gray-400">| Select square to Edit</span>
+      <div className="text-sm text-gray-500 mb-1 flex items-center gap-2 flex-wrap justify-center shrink-0">
+         {!isValid && <span className="text-red-500 font-bold">无效形状</span>}
+         {isValid && <span className="text-green-600 font-medium">有效展开图</span>}
+         <span className="text-xs text-gray-400">| {activeTool === 'move' ? '拖动方块进行移动' : '选择方块进行绘制'}</span>
       </div>
 
-      {/* Grid Container */}
-      <div 
-        className="relative bg-white border border-gray-200 shadow-sm rounded"
-        style={{ width: GRID_SIZE * CELL_SIZE, height: GRID_SIZE * CELL_SIZE }}
-      >
-        {/* Grid Background Lines */}
+      {/* Grid Container - Centered without clipping */}
+      <div className="flex-1 w-full overflow-auto flex justify-center min-h-0 relative">
         <div 
-            className="absolute inset-0 pointer-events-none opacity-10"
-            style={{
-                backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
-                backgroundSize: `${CELL_SIZE}px ${CELL_SIZE}px`
-            }}
-        />
-
-        {/* Faces */}
-        {faces.map(face => (
-            <DraggableFace
-                key={face.id}
-                data={face}
-                isSelected={selectedId === face.id}
-                onSelect={setSelectedId}
-                gridSize={CELL_SIZE}
-                onDrawUpdate={onTextureUpdate}
-                isHoveredBy3D={hoveredFaceId === face.id}
-                onHover={setHoveredFaceId}
-                drawingColor={drawingColor}
-                activeTool={activeTool}
-            />
-        ))}
-
-        {/* Move Targets (Ghost Slots) */}
-        {moveTargets.map(t => (
-            <div
-                key={`target-${t.x}-${t.y}`}
-                onClick={() => handleMove(t.x, t.y)}
-                className="absolute border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100 cursor-pointer flex items-center justify-center text-blue-400 transition-colors z-0"
+            className="relative bg-white border border-gray-200 shadow-sm rounded touch-none flex-shrink-0 my-auto m-2"
+            style={{ width: GRID_SIZE * cellSize, height: GRID_SIZE * cellSize }}
+        >
+            {/* Grid Background Lines */}
+            <div 
+                className="absolute inset-0 pointer-events-none opacity-10"
                 style={{
-                    width: CELL_SIZE - 4,
-                    height: CELL_SIZE - 4,
-                    left: t.x * CELL_SIZE + 2,
-                    top: t.y * CELL_SIZE + 2
+                    backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
+                    backgroundSize: `${cellSize}px ${cellSize}px`
                 }}
-            >
-                <Move size={24} className="opacity-50" />
-            </div>
-        ))}
+            />
+
+            {/* Faces */}
+            {faces.map(face => (
+                <DraggableFace
+                    key={face.id}
+                    ref={faceRefs.current.get(face.id) as any}
+                    data={face}
+                    isSelected={selectedId === face.id}
+                    onSelect={setSelectedId}
+                    gridSize={cellSize}
+                    onDrawUpdate={onTextureUpdate}
+                    isHoveredBy3D={hoveredFaceId === face.id}
+                    onHover={setHoveredFaceId}
+                    drawingColor={drawingColor}
+                    activeTool={activeTool}
+                    onMoveFace={onFaceMove}
+                    highlightEdges={getHighlights(face.id)}
+                    vertexLabels={getVertexLabels(face.id)}
+                    showSharedEdges={showSharedEdges}
+                    showFaceIds={showFaceIds}
+                />
+            ))}
+
+            {/* Move Targets (Ghost Slots) */}
+            {activeTool === 'move' && moveTargets.map(t => (
+                <div
+                    key={`target-${t.x}-${t.y}`}
+                    onClick={() => handleGhostClick(t.x, t.y)}
+                    className="absolute border-2 border-dashed border-blue-300 bg-blue-50/30 hover:bg-blue-100 cursor-pointer flex items-center justify-center text-blue-400 transition-colors z-0"
+                    style={{
+                        width: cellSize - 4,
+                        height: cellSize - 4,
+                        left: t.x * cellSize + 2,
+                        top: t.y * cellSize + 2
+                    }}
+                >
+                    <Move size={24} className="opacity-50" />
+                </div>
+            ))}
+        </div>
       </div>
     </div>
   );
