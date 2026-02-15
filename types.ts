@@ -45,4 +45,5 @@ export interface AdjacencyMap {
 
 export interface DraggableFaceHandle {
   undo: () => void;
+  saveHistory: () => void;
 }

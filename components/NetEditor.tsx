@@ -122,7 +122,7 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-
+        // Clear canvas will save history via DraggableFace
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
@@ -134,7 +134,8 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-
+        // Call saveHistory before filling
+        faceRefs.current.get(selectedId)?.current?.saveHistory?.();
         ctx.fillStyle = drawingColor;
         ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
@@ -146,7 +147,8 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-
+        // Call saveHistory before hatching
+        faceRefs.current.get(selectedId)?.current?.saveHistory?.();
         ctx.strokeStyle = drawingColor;
         ctx.lineWidth = 16;
         ctx.beginPath();
@@ -259,95 +261,101 @@ export const NetEditor: React.FC<Props> = ({
   return (
     <div className="flex flex-col items-center gap-4 bg-[#F5F5F7] p-3 sm:p-4 rounded-3xl shadow-inner h-full w-full relative">
 
-      {/* Toolbar - Responsive horizontal scroll */}
+      {/* Toolbar - Responsive horizontal scroll with better design */}
       <div className="flex flex-col gap-3 bg-white p-3 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] w-full max-w-full z-10 shrink-0">
-         {/* Colors */}
+         {/* Colors - More compact and better visibility */}
          <div className="flex justify-center gap-2 mb-2 overflow-x-auto pb-1 no-scrollbar">
             {['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'].map(c => (
                 <button
                     key={c}
                     onClick={() => setDrawingColor(c)}
-                    className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition-all duration-200 ${drawingColor === c ? 'border-black scale-110 shadow-[0_4px_12px_rgba(0,0,0,0.15)]' : 'border-transparent hover:scale-105'}`}
+                    className={`w-7 h-7 rounded-full border-2 flex-shrink-0 transition-all duration-200 ${drawingColor === c ? 'border-black scale-110 shadow-[0_4px_12px_rgba(0,0,0,0.15)]' : 'border-transparent hover:scale-105'}`}
                     style={{ backgroundColor: c }}
                 />
             ))}
          </div>
 
-         {/* Tools */}
-         <div className="flex justify-center gap-1.5 flex-wrap sm:flex-nowrap overflow-x-auto no-scrollbar">
+         {/* Tools - Better grouping and visual hierarchy */}
+         <div className="flex justify-center gap-2 flex-wrap sm:flex-nowrap overflow-x-auto no-scrollbar">
+             {/* Move tool */}
              <button
                 onClick={() => setActiveTool('move')}
-                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'move' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
+                className={`px-4 py-2.5 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'move' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="移动面"
              >
-                <Move size={16} />
+                <Move size={18} />
              </button>
 
              <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
 
+             {/* Drawing tools */}
              <button
                 onClick={() => setActiveTool('brush')}
-                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'brush' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
+                className={`px-4 py-2.5 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'brush' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="画笔"
              >
-                <Paintbrush size={16} />
+                <Paintbrush size={18} />
              </button>
              <button
                 onClick={() => setActiveTool('line')}
-                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'line' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
+                className={`px-4 py-2.5 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'line' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="直线"
              >
-                <Minus size={16} className="-rotate-45" />
+                <Minus size={18} className="-rotate-45" />
              </button>
              <button
                 onClick={() => setActiveTool('circle')}
-                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'circle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
+                className={`px-4 py-2.5 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'circle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="圆形"
              >
-                <Circle size={16} />
+                <Circle size={18} />
              </button>
              <button
                 onClick={() => setActiveTool('triangle')}
-                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'triangle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
+                className={`px-4 py-2.5 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'triangle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="三角形"
              >
-                <Triangle size={16} />
+                <Triangle size={18} />
              </button>
 
              <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
 
+             {/* Fill tools */}
              <button
                 onClick={handleHatch}
                 disabled={selectedId === null}
-                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
+                className="px-4 py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="斜线填充"
              >
-                <Hash size={16} />
+                <Hash size={18} />
              </button>
              <button
                 onClick={handleFill}
                 disabled={selectedId === null}
-                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
+                className="px-4 py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="实色填充"
              >
-                <PaintBucket size={16} />
+                <PaintBucket size={18} />
              </button>
+
              <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
+
+             {/* Action tools */}
              <button
                 onClick={handleUndo}
                 disabled={selectedId === null}
-                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
+                className="px-4 py-2.5 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="撤销上一步"
              >
-                <Undo size={16} />
+                <Undo size={18} />
              </button>
              <button
                 onClick={handleClearCanvas}
                 disabled={selectedId === null}
-                className="px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#FF453A] flex-shrink-0 transition-colors duration-200"
+                className="px-4 py-2.5 rounded-lg hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#FF453A] flex-shrink-0 transition-colors duration-200"
                 title="清空画布"
              >
-                <Eraser size={16} />
+                <Eraser size={18} />
              </button>
          </div>
       </div>

@@ -82,7 +82,8 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         ctx.fillRect(0, 0, size, size);
 
         // Initial state for undo
-        historyRef.current = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
+        const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        historyRef.current = [initialData];
 
         contextRef.current = ctx;
         onDrawUpdate(data.id);
@@ -90,24 +91,46 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
     }
   }, []);
 
-  // Expose Undo via Ref
+  // Ensure history is always properly initialized
+  useEffect(() => {
+    if (contextRef.current && canvasRef.current && historyRef.current.length === 0) {
+      const initialData = contextRef.current.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height);
+      historyRef.current = [initialData];
+    }
+  }, [contextRef.current, canvasRef.current]);
+
+  // Expose methods via Ref
   useImperativeHandle(ref, () => ({
     undo: () => {
       const ctx = contextRef.current;
       const canvas = canvasRef.current;
-      if (!ctx || !canvas || historyRef.current.length <= 1) return;
 
-      historyRef.current.pop(); // Remove current
+      if (!ctx || !canvas || historyRef.current.length <= 1) {
+        console.log('Undo not available:', !ctx, !canvas, historyRef.current.length);
+        return;
+      }
+
+      historyRef.current.pop(); // Remove current state
       const previousState = historyRef.current[historyRef.current.length - 1];
       ctx.putImageData(previousState, 0, 0);
       onDrawUpdate(data.id);
+    },
+    saveHistory: () => {
+      saveHistory();
     }
   }));
 
   const saveHistory = () => {
      const ctx = contextRef.current;
      const canvas = canvasRef.current;
+
      if (!ctx || !canvas) return;
+
+     // Ensure we save history at the beginning of each draw
+     if (historyRef.current.length === 0) {
+        const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        historyRef.current = [initialData];
+     }
 
      // Limit history size
      if (historyRef.current.length > 20) historyRef.current.shift();
@@ -187,6 +210,9 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         contextRef.current.strokeStyle = drawingColor;
         contextRef.current.fillStyle = drawingColor;
         contextRef.current.lineWidth = 16;
+
+        // Save history before any changes
+        saveHistory();
 
         if (activeTool === 'brush') {
             contextRef.current.beginPath();
