@@ -31,6 +31,8 @@ const App: React.FC = () => {
   // UI State
   const [showHelp, setShowHelp] = useState(true);
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  const [showSharedEdges, setShowSharedEdges] = useState(false);
+  const [showFaceIds, setShowFaceIds] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
