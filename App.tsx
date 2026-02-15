@@ -20,26 +20,34 @@ const App: React.FC = () => {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [hoveredFaceId, setHoveredFaceId] = useState<number | null>(null);
   const [selectedPreset, setSelectedPreset] = useState('t-shape');
-  
-  // Visibility Toggles
-  const [showSharedEdges, setShowSharedEdges] = useState(true);
-  const [showFaceIds, setShowFaceIds] = useState(true);
-
-  // Animation State
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [foldProgress, setFoldProgress] = useState(0); // 0 (flat) -> 1 (cube)
-  const [animationDirection, setAnimationDirection] = useState<1 | -1>(1); // 1 = folding, -1 = unfolding
-  const lastTimeRef = useRef<number>(0);
-  const animationReq = useRef<number | null>(null);
+  const [targetProgress, setTargetProgress] = useState(0); // 0 (flat) or 1 (cube)
 
   // Version counter to trigger texture updates in 3D
   const [textureVersion, setTextureVersion] = useState(0);
-  
+
   // Validation
   const [validity, setValidity] = useState({ isValid: true, message: '' });
 
   // UI State
   const [showHelp, setShowHelp] = useState(true);
+  const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const dropdown = document.querySelector('.preset-dropdown-container');
+      const button = document.querySelector('.preset-dropdown-button');
+
+      if (dropdown && button &&
+          !dropdown.contains(event.target as Node) &&
+          !button.contains(event.target as Node)) {
+        setShowPresetDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Computed Tree & Depth & Adjacency
   const { foldTree, maxDepth, adjacencyMap } = useMemo(() => {
@@ -64,41 +72,8 @@ const App: React.FC = () => {
     setValidity(status as any);
   }, [faces]);
 
-  // Animation Loop
-  useEffect(() => {
-    if (isPlaying) {
-        const animate = (time: number) => {
-            if (lastTimeRef.current === 0) lastTimeRef.current = time;
-            const delta = time - lastTimeRef.current;
-            lastTimeRef.current = time;
-
-            // Speed: Full fold in 2 seconds
-            const speed = 1 / 2000; 
-            
-            setFoldProgress(prev => {
-                let next = prev + (delta * speed * animationDirection);
-                if (next >= 1) {
-                    next = 1;
-                    setIsPlaying(false);
-                } else if (next <= 0) {
-                    next = 0;
-                    setIsPlaying(false);
-                }
-                return next;
-            });
-
-            animationReq.current = requestAnimationFrame(animate);
-        };
-        animationReq.current = requestAnimationFrame(animate);
-    } else {
-        lastTimeRef.current = 0;
-        if (animationReq.current) cancelAnimationFrame(animationReq.current);
-    }
-
-    return () => {
-        if (animationReq.current) cancelAnimationFrame(animationReq.current);
-    };
-  }, [isPlaying, animationDirection]);
+  // Animation Frame
+  // Removed manual animation loop, handled in CubeView now
 
   const handleTextureUpdate = (id: number) => {
       setTextureVersion(v => v + 1);
@@ -114,47 +89,36 @@ const App: React.FC = () => {
               y: preset.coords[i].y
           }));
           setFaces(newFaces);
-          setFoldProgress(0); // Reset animation
-          setIsPlaying(false);
+          setTargetProgress(0);
       }
   };
 
   const handleFold = () => {
       if (!validity.isValid) return;
-      // If already folded (or close to it), reset to flat to replay animation
-      if (foldProgress >= 0.99) {
-          setFoldProgress(0);
-      }
-      setAnimationDirection(1);
-      setIsPlaying(true);
+      setTargetProgress(1);
   };
 
   const handleUnfold = () => {
-      // If already flat (or close to it), reset to folded to replay animation
-      if (foldProgress <= 0.01) {
-          setFoldProgress(1);
-      }
-      setAnimationDirection(-1);
-      setIsPlaying(true);
+      setTargetProgress(0);
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full bg-slate-900 text-slate-100 overflow-hidden font-sans">
-      
+    <div className="flex flex-col md:flex-row h-screen w-full bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans">
+
       {/* Left Panel: 2D Editor */}
-      <div className="h-1/2 md:h-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r border-slate-700 bg-white order-2 md:order-1">
-        <header className="p-3 md:p-4 bg-slate-50 border-b border-gray-200 flex flex-wrap justify-between items-center text-slate-900 shrink-0 gap-2">
+      <div className="h-1/2 md:h-full md:w-1/2 flex flex-col bg-[#FFFFFF] order-2 md:order-1 rounded-3xl md:rounded-r-none md:border-r border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] mx-2 md:mx-0 my-2 md:my-0">
+        <header className="p-4 md:p-6 bg-[#F5F5F7] border-b border-gray-100 flex flex-wrap justify-between items-center text-[#1D1D1F] shrink-0 gap-3 rounded-t-3xl">
             <div className="flex items-center gap-4">
-                <h1 className="text-lg md:text-xl font-bold flex items-center gap-2">
-                    <Layers className="text-blue-600" />
+                <h1 className="text-lg md:text-xl font-semibold flex items-center gap-2">
+                    <Layers className="text-[#007AFF]" />
                     展开图编辑
                 </h1>
-                
+
                 {/* Toggles */}
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => setShowSharedEdges(!showSharedEdges)}
-                        className={`p-1.5 rounded-md border flex items-center gap-1 text-xs font-semibold transition-colors ${showSharedEdges ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-gray-100 border-gray-200 text-gray-500'}`}
+                        className={`px-3 py-1.5 rounded-full border flex items-center gap-1 text-xs font-medium transition-all duration-200 ${showSharedEdges ? 'bg-[#007AFF] border-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'bg-white border-gray-200 text-[#86868B] hover:bg-gray-50'}`}
                         title="切换公共边高亮"
                     >
                         <LinkIcon size={14} />
@@ -162,7 +126,7 @@ const App: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setShowFaceIds(!showFaceIds)}
-                        className={`p-1.5 rounded-md border flex items-center gap-1 text-xs font-semibold transition-colors ${showFaceIds ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-gray-100 border-gray-200 text-gray-500'}`}
+                        className={`px-3 py-1.5 rounded-full border flex items-center gap-1 text-xs font-medium transition-all duration-200 ${showFaceIds ? 'bg-[#007AFF] border-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'bg-white border-gray-200 text-[#86868B] hover:bg-gray-50'}`}
                         title="切换面编号"
                     >
                         <Hash size={14} />
@@ -173,18 +137,27 @@ const App: React.FC = () => {
 
             <div className="flex items-center gap-2 md:gap-3">
                  {/* Preset Dropdown */}
-                 <div className="relative group">
-                    <button className="flex items-center gap-1 text-sm font-semibold text-gray-700 bg-white border border-gray-300 px-2 py-1 md:px-3 md:py-1.5 rounded-md hover:bg-gray-50">
+                 <div className="relative preset-dropdown-container">
+                    <button
+                        onClick={() => setShowPresetDropdown(!showPresetDropdown)}
+                        className="preset-dropdown-button flex items-center gap-1 text-sm font-medium text-[#86868B] bg-white border border-gray-200 px-3 py-1.5 rounded-full hover:bg-gray-50 transition-all duration-200"
+                    >
                         <span className="hidden sm:inline">{PRESETS[selectedPreset]?.name}</span>
                         <span className="sm:hidden">预设</span>
-                        <ChevronDown size={14}/>
+                        <ChevronDown size={14} className={`transition-transform duration-200 ${showPresetDropdown ? 'rotate-180' : ''}`}/>
                     </button>
-                    <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg hidden group-hover:block z-20 max-h-60 md:max-h-80 overflow-y-auto">
+                    <div
+                        className={`absolute right-0 top-full mt-2 w-48 bg-white border border-gray-100 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] z-50 max-h-60 md:max-h-80 overflow-y-auto transition-all duration-200 ${showPresetDropdown ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
+                        onMouseLeave={() => setShowPresetDropdown(false)}
+                    >
                         {Object.entries(PRESETS).map(([key, val]) => (
-                            <button 
+                            <button
                                 key={key}
-                                onClick={() => loadPreset(key)}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700"
+                                onClick={() => {
+                                    loadPreset(key);
+                                    setShowPresetDropdown(false);
+                                }}
+                                className="block w-full text-left px-4 py-2 text-sm text-[#86868B] hover:bg-[#F5F5F7] hover:text-[#1D1D1F] transition-colors duration-200"
                             >
                                 {val.name}
                             </button>
@@ -192,18 +165,18 @@ const App: React.FC = () => {
                     </div>
                  </div>
 
-                <button 
+                <button
                     onClick={() => setShowHelp(!showHelp)}
-                    className={`p-1.5 md:p-2 rounded-full transition-colors ${showHelp ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-500'}`}
+                    className={`p-2 rounded-full transition-all duration-200 ${showHelp ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-100 text-[#86868B]'}`}
                     title="显示/隐藏说明"
                 >
                     <Info size={20} />
                 </button>
             </div>
         </header>
-        
-        <div className="flex-1 overflow-hidden p-0 md:p-2 bg-gray-100 relative">
-            <NetEditor 
+
+        <div className="flex-1 overflow-hidden p-0 md:p-6 bg-[#F5F5F7] relative">
+            <NetEditor
                 faces={faces}
                 setFaces={setFaces}
                 selectedId={selectedId}
@@ -216,15 +189,15 @@ const App: React.FC = () => {
                 showSharedEdges={showSharedEdges}
                 showFaceIds={showFaceIds}
             />
-            
+
             {/* Instruction Overlay */}
             {showHelp && (
-                <div className="absolute bottom-4 right-4 max-w-xs bg-white/95 p-3 rounded-xl shadow-xl border border-gray-200 text-xs text-gray-600 backdrop-blur-sm z-30 transition-all pointer-events-auto">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="font-bold text-gray-800 flex items-center gap-2">
-                            <Info size={14} className="text-blue-500"/> 使用指南
+                <div className="absolute bottom-6 right-6 max-w-xs bg-white/95 p-5 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.1)] border border-gray-100 text-xs text-[#86868B] backdrop-blur-md z-30 transition-all duration-300 pointer-events-auto">
+                    <div className="flex justify-between items-start mb-3">
+                        <p className="font-semibold text-[#1D1D1F] flex items-center gap-2">
+                            <Info size={14} className="text-[#007AFF]"/> 使用指南
                         </p>
-                        <button onClick={() => setShowHelp(false)} className="text-gray-400 hover:text-gray-600 p-1">
+                        <button onClick={() => setShowHelp(false)} className="text-[#86868B] hover:text-[#1D1D1F] p-1 transition-colors">
                             <X size={16} />
                         </button>
                     </div>
@@ -239,23 +212,23 @@ const App: React.FC = () => {
       </div>
 
       {/* Right Panel: 3D View */}
-      <div className="h-1/2 md:h-full md:w-1/2 flex flex-col bg-slate-900 relative order-1 md:order-2">
-        <header className="p-3 md:p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center shadow-lg z-10 shrink-0">
-             <h2 className="text-lg md:text-xl font-bold flex items-center gap-2 text-white">
-                <Box className="text-yellow-400" />
+      <div className="h-1/2 md:h-full md:w-1/2 flex flex-col bg-[#1C1C1E] relative order-1 md:order-2 rounded-3xl md:rounded-l-none shadow-[0_8px_30px_rgb(0,0,0,0.04)] mx-2 md:mx-0 my-2 md:my-0">
+        <header className="p-4 md:p-6 bg-[#2C2C2E] border-b border-gray-700 flex justify-between items-center z-10 shrink-0 rounded-t-3xl">
+             <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2 text-white">
+                <Box className="text-[#0A84FF]" />
                 3D 预览
             </h2>
-             <div className="text-xs text-gray-400 font-mono">
-                 {foldProgress === 0 ? '展开' : foldProgress === 1 ? '折叠' : `${Math.round(foldProgress * 100)}%`}
+             <div className="text-xs text-[#86868B] font-mono">
+                 {targetProgress === 0 ? '展开' : '折叠'}
              </div>
         </header>
 
         <div className="flex-1 relative cursor-move">
-            <CubeView 
-                faces={faces} 
+            <CubeView
+                faces={faces}
                 foldTree={foldTree}
                 maxDepth={maxDepth}
-                foldProgress={foldProgress}
+                targetProgress={targetProgress}
                 hoveredFaceId={hoveredFaceId}
                 setHoveredFaceId={setHoveredFaceId}
                 textureVersion={textureVersion}
@@ -264,24 +237,22 @@ const App: React.FC = () => {
                 showSharedEdges={showSharedEdges}
                 showFaceIds={showFaceIds}
             />
-            
+
             {/* Simple Buttons Overlay */}
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-6 z-20">
-                 <button 
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-20">
+                 <button
                     onClick={handleFold}
                     disabled={!validity.isValid}
                     className={`
-                        flex items-center gap-2 px-6 py-3 rounded-full font-bold shadow-lg transition-all transform hover:scale-105 active:scale-95
-                        ${!validity.isValid ? 'bg-gray-600 text-gray-400 cursor-not-allowed opacity-50' : 'bg-blue-600 text-white hover:bg-blue-500'}
-                    `}
+                        flex items-center gap-2 px-8 py-4 rounded-full font-semibold shadow-[0_8px_20px_rgba(0,122,255,0.25)] transition-all duration-300 ${!validity.isValid ? 'bg-[#48484A] text-[#86868B] cursor-not-allowed opacity-60' : 'bg-[#007AFF] text-white hover:bg-[#409CFF] hover:shadow-[0_12px_30px_rgba(0,122,255,0.4)] hover:scale-105'}`}
                  >
                      <Package size={20} />
                      折叠
                  </button>
 
-                 <button 
+                 <button
                     onClick={handleUnfold}
-                    className="flex items-center gap-2 px-6 py-3 rounded-full font-bold shadow-lg transition-all transform hover:scale-105 active:scale-95 bg-slate-700 text-white hover:bg-slate-600"
+                    className="flex items-center gap-2 px-8 py-4 rounded-full font-semibold shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-all duration-300 bg-[#48484A] text-white hover:bg-[#636366] hover:shadow-[0_12px_30px_rgba(0,0,0,0.4)] hover:scale-105"
                  >
                      <PackageOpen size={20} />
                      展开
@@ -289,9 +260,9 @@ const App: React.FC = () => {
             </div>
 
             {/* Error Status */}
-            <div className="absolute top-4 right-4 pointer-events-none w-full flex justify-end px-4">
+            <div className="absolute top-6 right-6 pointer-events-none w-full flex justify-end px-6">
                  {!validity.isValid && (
-                     <div className="bg-red-500/90 text-white px-3 py-1 md:px-4 md:py-2 text-xs md:text-sm rounded shadow-lg backdrop-blur mb-2 font-bold animate-pulse text-center">
+                     <div className="bg-[#FF453A]/90 text-white px-4 py-2 text-sm rounded-xl shadow-[0_8px_20px_rgba(255,69,58,0.3)] backdrop-blur-md mb-2 font-semibold text-center">
                          无效展开图
                      </div>
                  )}

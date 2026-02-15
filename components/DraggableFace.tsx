@@ -21,14 +21,14 @@ interface Props {
 
 const TEXTURE_SIZE = 1024; // High resolution for sharp 3D texturing
 
-export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({ 
+export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
   data, isSelected, onSelect, onDrawUpdate, isHoveredBy3D, onHover, gridSize, drawingColor, activeTool, onMoveFace, highlightEdges, vertexLabels, showSharedEdges, showFaceIds
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
   const snapshotRef = useRef<ImageData | null>(null);
   const startPosRef = useRef<{x: number, y: number}>({x: 0, y: 0});
-  
+
   // History for Undo
   const historyRef = useRef<ImageData[]>([]);
 
@@ -38,7 +38,7 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
   // Dragging State (Position)
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef<{ clientX: number, clientY: number, startLeft: number, startTop: number }>({ clientX: 0, clientY: 0, startLeft: 0, startTop: 0 });
-  
+
   // Visual position in pixels (relative to container)
   const [visualPos, setVisualPos] = useState({ x: data.x * gridSize + 2, y: data.y * gridSize + 2 });
 
@@ -65,14 +65,14 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
     if (!canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const size = TEXTURE_SIZE; 
-    
+    const size = TEXTURE_SIZE;
+
     if (canvas.width !== size * dpr) {
       canvas.width = size * dpr;
       canvas.height = size * dpr;
       canvas.style.width = '100%';
       canvas.style.height = '100%';
-      
+
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (ctx) {
         ctx.scale(dpr, dpr);
@@ -80,10 +80,10 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         ctx.lineJoin = 'round';
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, size, size);
-        
+
         // Initial state for undo
         historyRef.current = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
-        
+
         contextRef.current = ctx;
         onDrawUpdate(data.id);
       }
@@ -108,7 +108,7 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
      const ctx = contextRef.current;
      const canvas = canvasRef.current;
      if (!ctx || !canvas) return;
-     
+
      // Limit history size
      if (historyRef.current.length > 20) historyRef.current.shift();
      historyRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
@@ -117,10 +117,11 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
   // --- Handlers ---
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     (e.target as Element).setPointerCapture(e.pointerId);
 
     if (activeTool === 'move') {
+      // 选中面以显示公共边高亮
       onSelect(data.id);
       setIsDragging(true);
       dragStartRef.current = {
@@ -149,7 +150,7 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     (e.target as Element).releasePointerCapture(e.pointerId);
-    
+
     if (isDragging) {
       setIsDragging(false);
       const centerX = visualPos.x + (gridSize - 4) / 2;
@@ -176,9 +177,9 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
     if (!isSelected) {
         onSelect(data.id);
     }
-    
+
     const { offsetX, offsetY } = getOffset(e);
-    
+
     if(contextRef.current && canvasRef.current) {
         setIsDrawing(true);
         startPosRef.current = { x: offsetX, y: offsetY };
@@ -245,11 +246,11 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         onDrawUpdate(data.id);
     }
   };
-  
+
   const getOffset = (evt: React.PointerEvent) => {
       const canvas = canvasRef.current;
       if (!canvas) return { offsetX: 0, offsetY: 0 };
-      
+
       const rect = canvas.getBoundingClientRect();
       const clientX = evt.clientX;
       const clientY = evt.clientY;
@@ -262,10 +263,10 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
   // Helper for rendering vertex label
   const renderVertexLabel = (idx: number, posClass: string) => {
       if (!vertexLabels || !vertexLabels[idx]) return null;
-      
+
       // Determine badge size based on grid size
-      const badgeClass = gridSize < 50 
-        ? "w-4 h-4 text-[8px]" 
+      const badgeClass = gridSize < 50
+        ? "w-4 h-4 text-[8px]"
         : "w-5 h-5 text-[10px]";
 
       return (
@@ -280,9 +281,9 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
   return (
     <div
       className={`absolute transition-all ease-out bg-white select-none touch-none box-border
-        ${isSelected ? 'shadow-xl z-30' : 'shadow-sm z-10'}
-        ${isHoveredBy3D ? 'ring-4 ring-yellow-400' : ''}
-        ${isDragging ? 'cursor-grabbing scale-105 opacity-90 shadow-2xl duration-75' : 'duration-300'}
+        ${isSelected ? 'shadow-[0_20px_60px_rgba(0,0,0,0.1)] z-30' : 'shadow-[0_4px_12px_rgba(0,0,0,0.03)] z-10'}
+        ${isHoveredBy3D ? 'ring-4 ring-[#0A84FF] ring-opacity-60' : ''}
+        ${isDragging ? 'cursor-grabbing scale-105 opacity-90 shadow-[0_25px_70px_rgba(0,0,0,0.15)] duration-75' : 'duration-300'}
         ${activeTool === 'move' ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-crosshair'}
       `}
       style={{
@@ -291,7 +292,8 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         left: visualPos.x,
         top: visualPos.y,
         // If selected, show a border. If highlighted edges exist, we draw them separately inside.
-        border: isSelected ? '2px solid #3b82f6' : '1px solid #d1d5db'
+        border: isSelected ? '2px solid #007AFF' : '1px solid #e5e5e7',
+        borderRadius: '12px'
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -300,8 +302,8 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
       onPointerEnter={() => onHover(data.id)}
       onPointerLeave={() => onHover(null)}
     >
-      <canvas ref={canvasRef} className="w-full h-full block pointer-events-none" />
-      
+      <canvas ref={canvasRef} className="w-full h-full block pointer-events-none rounded-lg" />
+
       {/* Clear Number ID - Centered overlay */}
       {showFaceIds && (
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-10">
@@ -320,22 +322,22 @@ export const DraggableFace = forwardRef<DraggableFaceHandle, Props>(({
         <>
             {highlightEdges.top && (
                 <>
-                <div className="absolute top-0 left-0 right-0 h-1.5 z-40" style={{ backgroundColor: highlightEdges.top.color }} />
+                <div className="absolute top-0 left-0 right-0 h-2 z-40" style={{ backgroundColor: highlightEdges.top.color }} />
                 </>
             )}
             {highlightEdges.bottom && (
                 <>
-                <div className="absolute bottom-0 left-0 right-0 h-1.5 z-40" style={{ backgroundColor: highlightEdges.bottom.color }} />
+                <div className="absolute bottom-0 left-0 right-0 h-2 z-40" style={{ backgroundColor: highlightEdges.bottom.color }} />
                 </>
             )}
             {highlightEdges.left && (
                 <>
-                <div className="absolute top-0 bottom-0 left-0 w-1.5 z-40" style={{ backgroundColor: highlightEdges.left.color }} />
+                <div className="absolute top-0 bottom-0 left-0 w-2 z-40" style={{ backgroundColor: highlightEdges.left.color }} />
                 </>
             )}
             {highlightEdges.right && (
                 <>
-                <div className="absolute top-0 bottom-0 right-0 w-1.5 z-40" style={{ backgroundColor: highlightEdges.right.color }} />
+                <div className="absolute top-0 bottom-0 right-0 w-2 z-40" style={{ backgroundColor: highlightEdges.right.color }} />
                 </>
             )}
         </>

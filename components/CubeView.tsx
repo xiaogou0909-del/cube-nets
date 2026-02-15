@@ -25,10 +25,10 @@ declare global {
 interface CubeViewProps {
   faces: FaceData[];
   foldTree: FaceNode | null;
-  foldProgress: number; // 0 to 1 (Global)
+  targetProgress: number; // 0 or 1
   hoveredFaceId: number | null;
   setHoveredFaceId: (id: number | null) => void;
-  textureVersion: number; 
+  textureVersion: number;
   maxDepth: number;
   selectedId: number | null;
   adjacencyMap: AdjacencyMap;
@@ -36,10 +36,16 @@ interface CubeViewProps {
   showFaceIds: boolean;
 }
 
+// Reusable line components to avoid recreation
+const LINE_GEOMETRY = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-0.485, 0, 0),
+    new THREE.Vector3(0.485, 0, 0)
+]);
+
 const FoldablePart: React.FC<{
   node: FaceNode;
   faces: FaceData[];
-  globalProgress: number;
+  smoothProgress: { current: number };
   maxDepth: number;
   hoveredFaceId: number | null;
   onHover: (id: number | null) => void;
@@ -48,11 +54,22 @@ const FoldablePart: React.FC<{
   selectedId: number | null;
   showSharedEdges: boolean;
   showFaceIds: boolean;
-}> = ({ node, faces, globalProgress, maxDepth, hoveredFaceId, onHover, textureVersion, adjacencyMap, selectedId, showSharedEdges, showFaceIds }) => {
+}> = ({ node, faces, smoothProgress, maxDepth, hoveredFaceId, onHover, textureVersion, adjacencyMap, selectedId, showSharedEdges, showFaceIds }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
   const faceData = faces.find(f => f.id === node.id);
   const textureRef = useRef<THREE.CanvasTexture | null>(null);
+
+  // Constants for animation to avoid re-calculation
+  const targetAngle = useMemo(() => {
+    switch (node.directionFromParent) {
+        case 'top': return -Math.PI / 2;
+        case 'bottom': return Math.PI / 2;
+        case 'left': return -Math.PI / 2;
+        case 'right': return Math.PI / 2;
+        default: return 0;
+    }
+  }, [node.directionFromParent]);
 
   useEffect(() => {
     if (faceData?.canvasRef?.current && meshRef.current) {
@@ -73,6 +90,15 @@ const FoldablePart: React.FC<{
     }
   }, [textureVersion, faceData]);
 
+  // Cleanup textures on unmount
+  useEffect(() => {
+      return () => {
+          if (textureRef.current) {
+              textureRef.current.dispose();
+          }
+      };
+  }, []);
+
   // Pivot positioning
   const pivotPosition = useMemo(() => {
      switch (node.directionFromParent) {
@@ -85,29 +111,26 @@ const FoldablePart: React.FC<{
   }, [node.directionFromParent]);
 
   // Animation Frame
-  useFrame(() => {
+  useFrame((state, delta) => {
     if (groupRef.current && node.directionFromParent !== 'root') {
-        let targetAngle = 0;
-        
-        switch (node.directionFromParent) {
-            case 'top': targetAngle = -Math.PI / 2; break;
-            case 'bottom': targetAngle = Math.PI / 2; break;
-            case 'left': targetAngle = -Math.PI / 2; break;
-            case 'right': targetAngle = Math.PI / 2; break;
-        }
-
+        const globalProgress = smoothProgress.current;
         let localP = 0;
+        
         if (maxDepth > 0) {
             const scaledP = globalProgress * maxDepth;
             const startThreshold = node.depth - 1;
             localP = Math.max(0, Math.min(1, scaledP - startThreshold));
-            localP = 1 - Math.pow(1 - localP, 3);
+            
+            // Cubic ease-in-out for more natural feel
+            localP = localP < 0.5 
+                ? 4 * localP * localP * localP 
+                : 1 - Math.pow(-2 * localP + 2, 3) / 2;
         } else {
             localP = globalProgress;
         }
 
         const currentAngle = targetAngle * localP;
-        
+
         if (node.directionFromParent === 'top' || node.directionFromParent === 'bottom') {
             groupRef.current.rotation.x = currentAngle;
         } else {
@@ -128,35 +151,31 @@ const FoldablePart: React.FC<{
   }, [node.directionFromParent]);
 
   const isHovered = hoveredFaceId === node.id;
-  
+
   // Highlight Geometry for Adjacency
   const activeAdjacency = adjacencyMap[node.id];
   const isSelected = selectedId === node.id;
-  
+
   const getBorderColor = (side: EdgeSide): string | null => {
       if (!activeAdjacency) return null;
       const conn = activeAdjacency[side];
       if (!conn) return null;
-      
+
       if (isSelected) return conn.color;
       if (conn.targetFaceId === selectedId) {
           // If connected to selected face, match the color of the selected face's connection
           return SIDE_COLORS[conn.targetSide];
       }
-      
+
       return null;
   };
 
-  const EdgeLine = ({ start, end, color }: { start: [number,number,number], end: [number,number,number], color: string }) => {
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-     const points = useMemo(() => [new THREE.Vector3(...start), new THREE.Vector3(...end)], [start, end]);
+  const EdgeLine = ({ rotation, position, color }: { rotation: [number, number, number], position: [number, number, number], color: string }) => {
      return (
-        <line>
-            <bufferGeometry>
-                <float32BufferAttribute attach="attributes-position" args={[new Float32Array([...start, ...end]), 3]} />
-            </bufferGeometry>
-            <lineBasicMaterial color={color} linewidth={3} depthTest={false} />
-        </line>
+        <mesh rotation={rotation} position={position}>
+            <planeGeometry args={[0.97, 0.02]} />
+            <meshBasicMaterial color={color} transparent opacity={0.8} depthTest={false} />
+        </mesh>
      );
   };
 
@@ -166,28 +185,30 @@ const FoldablePart: React.FC<{
   return (
     <group position={node.directionFromParent === 'root' ? [0,0,0] : (pivotPosition as any)} ref={groupRef}>
         <group position={meshOffset as any}>
-            <mesh 
+            <mesh
                 ref={meshRef}
                 onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(node.id); }}
                 onPointerOut={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(null); }}
             >
                 <planeGeometry args={[0.98, 0.98]} />
-                <meshStandardMaterial 
-                    side={THREE.DoubleSide} 
-                    color={isHovered ? "#fef08a" : "#ffffff"} 
-                    emissive={isHovered ? "#fef08a" : "#000000"}
+                <meshStandardMaterial
+                    side={THREE.DoubleSide}
+                    color={isHovered ? "#0A84FF" : "#ffffff"}
+                    emissive={isHovered ? "#0A84FF" : "#000000"}
                     emissiveIntensity={isHovered ? 0.2 : 0}
-                    roughness={0.6}
+                    roughness={0.8}
+                    metalness={0.1}
+                    transparent={false}
                 />
             </mesh>
-            
+
             {/* Numbering - Floating Text */}
             {showFaceIds && (
-                <Text 
-                    position={[0, 0, 0.02]} 
-                    fontSize={0.4} 
-                    color="black" 
-                    anchorX="center" 
+                <Text
+                    position={[0, 0, 0.02]}
+                    fontSize={0.4}
+                    color="black"
+                    anchorX="center"
                     anchorY="middle"
                     fillOpacity={0.15}
                 >
@@ -198,10 +219,10 @@ const FoldablePart: React.FC<{
             {/* Adjacency Highlights */}
             {showSharedEdges && (
                 <>
-                    {getBorderColor('top') && <EdgeLine start={[-0.49, 0.49, Z]} end={[0.49, 0.49, Z]} color={getBorderColor('top')!} />}
-                    {getBorderColor('right') && <EdgeLine start={[0.49, 0.49, Z]} end={[0.49, -0.49, Z]} color={getBorderColor('right')!} />}
-                    {getBorderColor('bottom') && <EdgeLine start={[0.49, -0.49, Z]} end={[-0.49, -0.49, Z]} color={getBorderColor('bottom')!} />}
-                    {getBorderColor('left') && <EdgeLine start={[-0.49, -0.49, Z]} end={[-0.49, 0.49, Z]} color={getBorderColor('left')!} />}
+                    {getBorderColor('top') && <EdgeLine position={[0, 0.485, Z]} rotation={[0, 0, 0]} color={getBorderColor('top')!} />}
+                    {getBorderColor('right') && <EdgeLine position={[0.485, 0, Z]} rotation={[0, 0, Math.PI / 2]} color={getBorderColor('right')!} />}
+                    {getBorderColor('bottom') && <EdgeLine position={[0, -0.485, Z]} rotation={[0, 0, 0]} color={getBorderColor('bottom')!} />}
+                    {getBorderColor('left') && <EdgeLine position={[-0.485, 0, Z]} rotation={[0, 0, Math.PI / 2]} color={getBorderColor('left')!} />}
                 </>
             )}
 
@@ -213,11 +234,11 @@ const FoldablePart: React.FC<{
 
             {/* Recursion */}
             {node.children.map(child => (
-                <FoldablePart 
-                    key={child.id} 
-                    node={child} 
-                    faces={faces} 
-                    globalProgress={globalProgress}
+                <FoldablePart
+                    key={child.id}
+                    node={child}
+                    faces={faces}
+                    smoothProgress={smoothProgress}
                     maxDepth={maxDepth}
                     hoveredFaceId={hoveredFaceId}
                     onHover={onHover}
@@ -233,39 +254,72 @@ const FoldablePart: React.FC<{
   );
 };
 
-export const CubeView: React.FC<CubeViewProps> = ({ 
-  faces, foldTree, foldProgress, hoveredFaceId, setHoveredFaceId, textureVersion, maxDepth, selectedId, adjacencyMap, showSharedEdges, showFaceIds
-}) => {
+const Scene: React.FC<CubeViewProps & { smoothProgress: React.MutableRefObject<number> }> = (props) => {
+  const { foldTree, targetProgress, smoothProgress } = props;
+
+  // Animation Driver
+  useFrame((state, delta) => {
+      // Spring-like smooth transition
+      const speed = 4.0;
+      const diff = targetProgress - smoothProgress.current;
+      
+      if (Math.abs(diff) > 0.0001) {
+          smoothProgress.current += diff * Math.min(1, delta * speed);
+      } else {
+          smoothProgress.current = targetProgress;
+      }
+  });
+
   if (!foldTree) return null;
 
   return (
-    <Canvas shadows dpr={[1, 2]}>
+    <>
         <PerspectiveCamera makeDefault position={[0, 0, 8]} fov={45} />
-        <ArcballControls 
-            makeDefault 
-            minDistance={3} 
+        <ArcballControls
+            makeDefault
+            minDistance={3}
             maxDistance={20}
+            dampingFactor={0.15}
+            enablePan={false}
         />
-        
-        <Environment preset="city" />
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} castShadow />
+
+        <ambientLight intensity={0.6} />
+        <pointLight position={[10, 10, 10]} intensity={0.8} />
 
         <Center>
-            <FoldablePart 
-                node={foldTree} 
-                faces={faces} 
-                globalProgress={foldProgress}
-                maxDepth={maxDepth}
-                hoveredFaceId={hoveredFaceId}
-                onHover={setHoveredFaceId}
-                textureVersion={textureVersion}
-                adjacencyMap={adjacencyMap}
-                selectedId={selectedId}
-                showSharedEdges={showSharedEdges}
-                showFaceIds={showFaceIds}
+            <FoldablePart
+                node={foldTree}
+                faces={props.faces}
+                smoothProgress={smoothProgress}
+                maxDepth={props.maxDepth}
+                hoveredFaceId={props.hoveredFaceId}
+                onHover={props.setHoveredFaceId}
+                textureVersion={props.textureVersion}
+                adjacencyMap={props.adjacencyMap}
+                selectedId={props.selectedId}
+                showSharedEdges={props.showSharedEdges}
+                showFaceIds={props.showFaceIds}
             />
         </Center>
+    </>
+  );
+};
+
+export const CubeView: React.FC<CubeViewProps> = (props) => {
+  const smoothProgress = useRef(0);
+
+  return (
+    <Canvas
+      shadows={false}
+      dpr={[1, 2]}
+      className="bg-gradient-to-br from-[#1C1C1E] to-[#2C2C2E] rounded-2xl md:rounded-l-none"
+      performance={{ min: 0.5 }}
+      gl={{ 
+        antialias: true,
+        powerPreference: "high-performance"
+      }}
+    >
+        <Scene {...props} smoothProgress={smoothProgress} />
     </Canvas>
   );
 };

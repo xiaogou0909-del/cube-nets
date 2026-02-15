@@ -35,26 +35,26 @@ export const NetEditor: React.FC<Props> = ({
 }) => {
   const [drawingColor, setDrawingColor] = useState('#1e293b'); // slate-800
   const [activeTool, setActiveTool] = useState<ToolType>('move');
-  
+
   // Responsive Cell Size
-  const [cellSize, setCellSize] = useState(80);
+  const [cellSize, setCellSize] = useState(60);
 
   useEffect(() => {
     const handleResize = () => {
         // Mobile (md breakpoint is 768px)
-        setCellSize(window.innerWidth < 768 ? 44 : 80);
+        setCellSize(window.innerWidth < 768 ? 35 : 60);
     };
-    
+
     // Initial call
     handleResize();
-    
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Refs for each face to call Undo
   const faceRefs = useRef<Map<number, React.RefObject<DraggableFaceHandle>>>(new Map());
-  
+
   // Ensure we have refs for current faces
   if (faceRefs.current.size !== faces.length) {
       faces.forEach(f => {
@@ -67,9 +67,9 @@ export const NetEditor: React.FC<Props> = ({
   // Calculate potential move targets (ghost slots)
   const moveTargets = useMemo(() => {
     if (selectedId === null) return [];
-    
+
     const remaining = faces.filter(f => f.id !== selectedId);
-    if (remaining.length === 0) return []; 
+    if (remaining.length === 0) return [];
 
     const occupied = new Set(remaining.map(f => `${f.x},${f.y}`));
     const targets = new Set<string>();
@@ -95,7 +95,7 @@ export const NetEditor: React.FC<Props> = ({
 
   const handleGhostClick = (x: number, y: number) => {
     if (selectedId === null) return;
-    setFaces(prev => prev.map(f => 
+    setFaces(prev => prev.map(f =>
       f.id === selectedId ? { ...f, x, y } : f
     ));
   };
@@ -122,7 +122,7 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-        
+
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
@@ -134,7 +134,7 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-        
+
         ctx.fillStyle = drawingColor;
         ctx.fillRect(0, 0, logicalSize, logicalSize);
         onTextureUpdate(selectedId);
@@ -146,11 +146,11 @@ export const NetEditor: React.FC<Props> = ({
     if (ctx && selectedId !== null) {
         const dpr = window.devicePixelRatio || 1;
         const logicalSize = ctx.canvas.width / dpr;
-        
+
         ctx.strokeStyle = drawingColor;
         ctx.lineWidth = 16;
         ctx.beginPath();
-        
+
         const step = 80;
         for(let i = -logicalSize; i < logicalSize * 2; i += step) {
             ctx.moveTo(i, 0);
@@ -172,12 +172,12 @@ export const NetEditor: React.FC<Props> = ({
       if (selectedId === null) return undefined;
       const map = adjacencyMap[faceId];
       if (!map) return undefined;
-      
+
       // Case 1: This is the selected face. Show all its connections.
       if (faceId === selectedId) {
-          return map; 
+          return map;
       }
-      
+
       // Case 2: This is a neighbor. Check if it connects to the selected face.
       const filtered: typeof map = {};
       let hasMatch = false;
@@ -257,115 +257,115 @@ export const NetEditor: React.FC<Props> = ({
   };
 
   return (
-    <div className="flex flex-col items-center gap-4 bg-gray-50 p-2 sm:p-4 rounded-xl shadow-inner h-full w-full relative">
-      
+    <div className="flex flex-col items-center gap-4 bg-[#F5F5F7] p-3 sm:p-4 rounded-3xl shadow-inner h-full w-full relative">
+
       {/* Toolbar - Responsive horizontal scroll */}
-      <div className="flex flex-col gap-2 bg-white p-2 rounded-lg shadow-sm w-full max-w-full z-10 shrink-0">
+      <div className="flex flex-col gap-3 bg-white p-3 rounded-xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] w-full max-w-full z-10 shrink-0">
          {/* Colors */}
-         <div className="flex justify-center gap-1 mb-2 overflow-x-auto pb-1 no-scrollbar">
+         <div className="flex justify-center gap-2 mb-2 overflow-x-auto pb-1 no-scrollbar">
             {['#1e293b', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'].map(c => (
                 <button
                     key={c}
                     onClick={() => setDrawingColor(c)}
-                    className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition-transform ${drawingColor === c ? 'border-black scale-110' : 'border-transparent'}`}
+                    className={`w-6 h-6 rounded-full border-2 flex-shrink-0 transition-all duration-200 ${drawingColor === c ? 'border-black scale-110 shadow-[0_4px_12px_rgba(0,0,0,0.15)]' : 'border-transparent hover:scale-105'}`}
                     style={{ backgroundColor: c }}
                 />
             ))}
          </div>
-         
+
          {/* Tools */}
-         <div className="flex justify-center gap-2 flex-wrap sm:flex-nowrap overflow-x-auto no-scrollbar">
-             <button 
+         <div className="flex justify-center gap-1.5 flex-wrap sm:flex-nowrap overflow-x-auto no-scrollbar">
+             <button
                 onClick={() => setActiveTool('move')}
-                className={`p-2 rounded flex-shrink-0 ${activeTool === 'move' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'move' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="移动面"
              >
-                <Move size={18} />
+                <Move size={16} />
              </button>
-             
-             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
 
-             <button 
+             <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
+
+             <button
                 onClick={() => setActiveTool('brush')}
-                className={`p-2 rounded flex-shrink-0 ${activeTool === 'brush' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'brush' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="画笔"
              >
-                <Paintbrush size={18} />
+                <Paintbrush size={16} />
              </button>
-             <button 
+             <button
                 onClick={() => setActiveTool('line')}
-                className={`p-2 rounded flex-shrink-0 ${activeTool === 'line' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'line' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="直线"
              >
-                <Minus size={18} className="-rotate-45" />
+                <Minus size={16} className="-rotate-45" />
              </button>
-             <button 
+             <button
                 onClick={() => setActiveTool('circle')}
-                className={`p-2 rounded flex-shrink-0 ${activeTool === 'circle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'circle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="圆形"
              >
-                <Circle size={18} />
+                <Circle size={16} />
              </button>
-             <button 
+             <button
                 onClick={() => setActiveTool('triangle')}
-                className={`p-2 rounded flex-shrink-0 ${activeTool === 'triangle' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
+                className={`px-3 py-2 rounded-lg flex-shrink-0 transition-all duration-200 ${activeTool === 'triangle' ? 'bg-[#007AFF] text-white shadow-[0_4px_14px_rgba(0,122,255,0.3)]' : 'hover:bg-gray-50 text-[#86868B]'}`}
                 title="三角形"
              >
-                <Triangle size={18} />
+                <Triangle size={16} />
              </button>
-             
-             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
 
-             <button 
+             <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
+
+             <button
                 onClick={handleHatch}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="斜线填充"
              >
-                <Hash size={18} />
+                <Hash size={16} />
              </button>
-             <button 
+             <button
                 onClick={handleFill}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="实色填充"
              >
-                <PaintBucket size={18} />
+                <PaintBucket size={16} />
              </button>
-             <div className="w-px bg-gray-200 h-8 mx-1 hidden sm:block"></div>
-             <button 
+             <div className="w-px bg-gray-100 h-6 mx-1 hidden sm:block"></div>
+             <button
                 onClick={handleUndo}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed text-gray-700 flex-shrink-0"
+                className="px-3 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#86868B] flex-shrink-0 transition-colors duration-200"
                 title="撤销上一步"
              >
-                <Undo size={18} />
+                <Undo size={16} />
              </button>
-             <button 
+             <button
                 onClick={handleClearCanvas}
                 disabled={selectedId === null}
-                className="p-2 rounded hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-red-500 flex-shrink-0"
+                className="px-3 py-2 rounded-lg hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed text-[#FF453A] flex-shrink-0 transition-colors duration-200"
                 title="清空画布"
              >
-                <Eraser size={18} />
+                <Eraser size={16} />
              </button>
          </div>
       </div>
 
-      <div className="text-sm text-gray-500 mb-1 flex items-center gap-2 flex-wrap justify-center shrink-0">
-         {!isValid && <span className="text-red-500 font-bold">无效形状</span>}
-         {isValid && <span className="text-green-600 font-medium">有效展开图</span>}
+      <div className="text-sm text-[#86868B] mb-2 flex items-center gap-2 flex-wrap justify-center shrink-0">
+         {!isValid && <span className="text-[#FF453A] font-semibold">无效形状</span>}
+         {isValid && <span className="text-[#30D158] font-medium">有效展开图</span>}
          <span className="text-xs text-gray-400">| {activeTool === 'move' ? '拖动方块进行移动' : '选择方块进行绘制'}</span>
       </div>
 
       {/* Grid Container - Centered without clipping */}
       <div className="flex-1 w-full overflow-auto flex justify-center min-h-0 relative">
-        <div 
-            className="relative bg-white border border-gray-200 shadow-sm rounded touch-none flex-shrink-0 my-auto m-2"
+        <div
+            className="relative bg-white border border-gray-100 shadow-[0_8px_30px_rgba(0,0,0,0.04)] rounded-2xl touch-none flex-shrink-0 my-auto m-2"
             style={{ width: GRID_SIZE * cellSize, height: GRID_SIZE * cellSize }}
         >
             {/* Grid Background Lines */}
-            <div 
+            <div
                 className="absolute inset-0 pointer-events-none opacity-10"
                 style={{
                     backgroundImage: `linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)`,
@@ -400,7 +400,7 @@ export const NetEditor: React.FC<Props> = ({
                 <div
                     key={`target-${t.x}-${t.y}`}
                     onClick={() => handleGhostClick(t.x, t.y)}
-                    className="absolute border-2 border-dashed border-blue-300 bg-blue-50/30 hover:bg-blue-100 cursor-pointer flex items-center justify-center text-blue-400 transition-colors z-0"
+                    className="absolute border-2 border-dashed border-[#007AFF] bg-[#007AFF]/10 hover:bg-[#007AFF]/20 cursor-pointer flex items-center justify-center text-[#007AFF] transition-colors duration-200 z-0"
                     style={{
                         width: cellSize - 4,
                         height: cellSize - 4,
